@@ -1,0 +1,33 @@
+# Ignore virtual environment
+venv/
+.env
+*.pyc
+__pycache__/
+instance/
+
+# Ignore IDE/editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Ignore logs and database files
+*.log
+*.sqlite3
+*.db
+
+# Ignore OS-generated files
+.DS_Store
+Thumbs.db
+
+# Ignore compiled Python files
+*.pyo
+*.pyc
+*.pyd
+
+# Ignore migrations (if using Flask-Migrate)
+migrations/
+
+# Ignore Jupyter Notebook checkpoints (if applicable)
+.ipynb_checkpoints/
+Credentials.json
