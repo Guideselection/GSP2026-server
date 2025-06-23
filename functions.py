@@ -226,4 +226,14 @@ def insert_rows_to_mongodb(rows_data, db_name, collection_name):
 rows_data = get_all_rows_as_dict("../GSP Upgraded Data/SIST-PC-DB-2026-CSE-DB.csv")
 
 # Insert the data into MongoDB
-insert_rows_to_mongodb(rows_data, db, "users")
+# insert_rows_to_mongodb(rows_data, db, "users")
+
+col = db.facultycredentials
+
+seen = set()
+for doc in col.find():
+    mail = doc["mailId"]
+    if mail in seen:
+        col.delete_one({"_id": doc["_id"]})
+    else:
+        seen.add(mail)

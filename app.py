@@ -2204,7 +2204,6 @@ def selectStudentDirectlyByStaff(mailid):
         else:
             print({"message": "Fail", "error": "register no not found"})
             return jsonify({"message": "Fail", "error": "register no not found"})
-        pass
     else:
         try:
             generated_team_id = f"CSE-{str(datetime.now().year % 100 + 1)}-{str(int(data['regNo']) % 10000).rjust(4, '0')}"
@@ -2605,6 +2604,115 @@ def get_faculty_details():
     except Exception as e:
         print("🔥 /admin/get_faculty_details ERROR:", e)
         return jsonify({"error": "Something went wrong"}), 500
+
+
+@app.route("/admin/add_faculty", methods=["POST"])
+def add_faculty():
+    facultylist_collection = db["facultylist"]
+    facultycredentials_collection = db["facultycredentials"]
+
+    try:
+        # Get data from request
+        data = request.get_json()
+
+        # Validate required fields
+        required_fields = [
+            "name",
+            "email",
+            "empId",
+            "designation",
+            "totalBatches",
+            "maxTeams",
+            "password",
+        ]
+        for field in required_fields:
+            if not data.get(field):
+                return jsonify({"message": f"{field} is required"}), 400
+
+        # Validate domain1 is provided (at least one domain required)
+        if not data.get("fieldOfInterest") or not data.get("fieldOfInterest").strip():
+            return jsonify(
+                {"message": "At least one field of interest domain is required"}
+            ), 400
+
+        # Check if faculty already exists
+        existing_faculty = facultylist_collection.find_one(
+            {
+                "$or": [
+                    {"University EMAIL ID": data["email"]},
+                    {"EMP ID": int(data["empId"])},
+                ]
+            }
+        )
+
+        if existing_faculty:
+            return jsonify(
+                {"message": "Faculty with this email or Employee ID already exists"}
+            ), 400
+
+        # Get the next serial number
+        last_faculty = facultylist_collection.find_one(sort=[("SL.NO", -1)])
+        next_sl_no = (last_faculty["SL"]["NO"] + 1) if last_faculty else 1
+
+        # Parse domains from fieldOfInterest
+        domains = [
+            domain.strip()
+            for domain in data["fieldOfInterest"].split(";")
+            if domain.strip()
+        ]
+
+        # Ensure we have at least one domain and pad with empty strings if needed
+        while len(domains) < 3:
+            domains.append("")
+
+        # Create faculty document structure
+        faculty_document = {
+            "SL": {"NO": next_sl_no},
+            "NAME OF THE FACULTY": data["name"],
+            "TOTAL BATCHES": int(data["totalBatches"]),
+            "MAX TEAMS": int(data["maxTeams"]),
+            "EMP ID": int(data["empId"]),
+            "NAME_Capital letters as per Guide List": data["name"].upper(),
+            "DESIGNATION": data["designation"].upper(),
+            "DOMAIN 1": domains[0] if len(domains) > 0 else "",
+            "DOMAIN 2": domains[1] if len(domains) > 1 else "",
+            "DOMAIN 3": domains[2] if len(domains) > 2 else "",
+            "University EMAIL ID": data["email"],
+            "IMAGE": data["imageDriveLink"],
+        }
+
+        # Create credentials document (same as faculty document for your structure)
+        # credentials_document = faculty_document.copy()
+
+        # Insert into both collections
+        facultylist_result = facultylist_collection.insert_one(faculty_document)
+        # facultycredentials_result = facultycredentials_collection.insert_one(
+        #     credentials_document
+        # )
+
+        # Optionally, you might want to store hashed password separately
+        # If you need a separate password collection, uncomment below:
+        credentials_document = {
+            # "faculty_id": facultylist_result.inserted_id,
+            "mailId": data["email"],
+            "name": data["name"],
+            "password": data["password"],
+            # "created_at": datetime.utcnow()
+        }
+        facultycredentials_collection.insert_one(credentials_document)
+
+        return jsonify(
+            {
+                "message": f"Faculty {data['name']} added successfully!",
+                "faculty_id": str(facultylist_result.inserted_id),
+                "sl_no": next_sl_no,
+            }
+        ), 201
+
+    except ValueError as ve:
+        return jsonify({"message": f"Invalid data format: {str(ve)}"}), 400
+    except Exception as e:
+        return jsonify({"message": f"Error adding faculty: {str(e)}"}), 500
 
 
 if __name__ == "__main__":
