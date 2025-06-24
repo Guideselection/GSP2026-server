@@ -12,6 +12,9 @@ import time
 import driveAPI
 import os
 from werkzeug.utils import secure_filename
+from pymongo.mongo_client import MongoClient
+from pymongo.server_api import ServerApi
+
 
 app = Flask(__name__)
 # CORS(app)
@@ -22,7 +25,7 @@ CORS(app, supports_credentials=True)
 load_dotenv()
 
 
-app = Flask(__name__)
+# app = Flask(__name__)
 app.config["MAIL_SERVER"] = "smtp.gmail.com"
 app.config["MAIL_PORT"] = 465
 app.config["MAIL_USE_TLS"] = False
@@ -53,9 +56,15 @@ mail = Mail(app)
 # mail = Mail(app)
 
 
-client = MongoClient(str(os.getenv("MONGO_URI")))
+client = MongoClient(str(os.getenv("MONGO_URI")), server_api=ServerApi('1'))
 # print(os.getenv("MONGO_URI"))
 
+# Send a ping to confirm a successful connection
+try:
+    client.admin.command('ping')
+    print("Pinged your deployment. You successfully connected to MongoDB!")
+except Exception as e:
+    print(e)
 
 db = client["cse_gsp_22_26"]
 
