@@ -62,10 +62,14 @@ db = client["cse_gsp_22_26"]
 # CORS(app)
 CORS(app, supports_credentials=True)
 
+# check health in render (hosting service)
+@app.route("/healthz")
+def healthz():
+    return "OK", 200
 
 @app.route("/")
 def index():
-    return render_template
+    return jsonify({"message": "Backend is working."})
 
 
 @app.route("/users", methods=["POST", "GET"])
