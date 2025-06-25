@@ -26,42 +26,42 @@ load_dotenv()
 
 
 # app = Flask(__name__)
-app.config["MAIL_SERVER"] = "smtp.gmail.com"
-app.config["MAIL_PORT"] = 465
-app.config["MAIL_USE_TLS"] = False
-app.config["MAIL_USE_SSL"] = True
-# print(os.getenv("TEMP_MAIL"))
-# print(os.getenv("TEMP_MAIL_PASSWORD"))
-app.config["MAIL_USERNAME"] = str(os.getenv("ADMIN_MAILID"))
-app.config["MAIL_PASSWORD"] = str(os.getenv("TEMP_MAIL_PASSWORD"))
-# print(str(os.getenv("TEMP_MAIL")))
-# print(str(os.getenv("TEMP_MAIL_PASSWORD")))
-
-
-mail = Mail(app)
-
-# Elastic Mail Service
-# app.config["MAIL_SERVER"] = "smtp.elasticemail.com"  # Replace with your email server
-# app.config["MAIL_PORT"] = 2525
-# # app.config['MAIL_USE_TLS'] = False
-# # app.config['MAIL_USE_SSL'] = True
-# app.config["MAIL_USERNAME"] = (
-#     "guideselectionportal@cse-soc.com"  # Replace with your email address
-# )
-# app.config["MAIL_PASSWORD"] = str(
-#     os.getenv("MAIL_PASSWORD")
-# )  # Replace with your email password
+# app.config["MAIL_SERVER"] = "smtp.gmail.com"
+# app.config["MAIL_PORT"] = 465
+# app.config["MAIL_USE_TLS"] = False
+# app.config["MAIL_USE_SSL"] = True
+# # print(os.getenv("TEMP_MAIL"))
+# # print(os.getenv("TEMP_MAIL_PASSWORD"))
+# app.config["MAIL_USERNAME"] = str(os.getenv("ADMIN_MAILID"))
+# app.config["MAIL_PASSWORD"] = str(os.getenv("TEMP_MAIL_PASSWORD"))
+# # print(str(os.getenv("TEMP_MAIL")))
+# # print(str(os.getenv("TEMP_MAIL_PASSWORD")))
 
 
 # mail = Mail(app)
 
+# Elastic Mail Service
+app.config["MAIL_SERVER"] = "smtp.elasticemail.com"  # Replace with your email server
+app.config["MAIL_PORT"] = 2525
+# app.config['MAIL_USE_TLS'] = False
+# app.config['MAIL_USE_SSL'] = True
+app.config["MAIL_USERNAME"] = (
+    "guideselectionportal@cse-soc.com"  # Replace with your email address
+)
+app.config["MAIL_PASSWORD"] = str(
+    os.getenv("MAIL_PASSWORD")
+)  # Replace with your email password
 
-client = MongoClient(str(os.getenv("MONGO_URI")), server_api=ServerApi('1'))
+
+mail = Mail(app)
+
+
+client = MongoClient(str(os.getenv("MONGO_URI")), server_api=ServerApi("1"))
 # print(os.getenv("MONGO_URI"))
 
 # Send a ping to confirm a successful connection
 try:
-    client.admin.command('ping')
+    client.admin.command("ping")
     print("Pinged your deployment. You successfully connected to MongoDB!")
 except Exception as e:
     print(e)
@@ -71,10 +71,12 @@ db = client["cse_gsp_22_26"]
 # CORS(app)
 CORS(app, supports_credentials=True)
 
+
 # check health in render (hosting service)
 @app.route("/healthz")
 def healthz():
     return "OK", 200
+
 
 @app.route("/")
 def index():
