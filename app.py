@@ -71,7 +71,8 @@ try:
 except Exception as e:
     print(e)
 
-db = client["cse_gsp_22_26"]
+# db = client["cse_gsp_22_26"]
+db = client["backup_cse_gsp_22_26"]
 
 # CORS(app)
 CORS(app, supports_credentials=True)
@@ -503,7 +504,8 @@ def get_guide_list():
                 {
                     "id": i,
                     "NAME": doc.get("NAME OF THE FACULTY", ""),
-                    "VACANCIES": doc.get("TOTAL BATCHES", 0),
+                    "VACANCIES": doc.get("ALLOTED BATCHES", 0)
+                    - doc.get("TOTAL BATCHES", 0),
                     "DESIGNATION": doc.get("DESIGNATION", ""),
                     "DOMAIN1": doc.get("DOMAIN 1", ""),
                     "DOMAIN2": doc.get("DOMAIN 2", ""),
@@ -700,6 +702,8 @@ def create_collection_duo(mailId1, mailId2):
 
     # Get the collection name and data from the request JSON
     collection_data = data.get("data")
+    collection_data["regNo"] = int(collection_data["regNo"])
+    collection_data["p2regNo"] = int(collection_data["p2regNo"])
 
     status = {
         "documentation": False,
@@ -910,7 +914,7 @@ def add_registered_data():
         # print(email, "--Acquired Lock")
 
         result = collection.find_one(filter)
-        if result["TOTAL BATCHES"] > 0:
+        if result["ALLOTED BATCHES"] - result["TOTAL BATCHES"] > 0:
             try:
                 # Start a client session
                 with client.start_session() as session:
@@ -924,7 +928,7 @@ def add_registered_data():
                             update_vacancies_data(
                                 "facultylist",
                                 {"University EMAIL ID": guideMailId},
-                                {"TOTAL BATCHES": result["TOTAL BATCHES"] - 1},
+                                {"TOTAL BATCHES": result["TOTAL BATCHES"] + 1},
                             )
                     # Commit the transaction
                     # session.commit_transaction()
@@ -971,7 +975,7 @@ def check_vacancies(mail):
     filter = {"University EMAIL ID": mail}
     result = collection.find_one(filter)
     # print(result)
-    return jsonify({"vacancies": result["TOTAL BATCHES"]})
+    return jsonify({"vacancies": result["ALLOTED BATCHES"] - result["TOTAL BATCHES"]})
 
 
 @app.route("/check_second_mail/<string:mailid>", methods=["GET"])
@@ -2157,7 +2161,7 @@ def selectStudentDirectlyByStaff(mailid):
                 # Update the data in the collection
 
                 # result = faculty_collection.update_one({ "University EMAIL ID": collection_data["selectedGuideMailId"] }, {'$set': updated_data})
-                vacancies = document["TOTAL BATCHES"]
+                # vacancies = document["TOTAL BATCHES"]
                 maxTeams = document["MAX TEAMS"]
 
                 result = faculty_collection.update_one(
@@ -2169,7 +2173,8 @@ def selectStudentDirectlyByStaff(mailid):
                     {
                         "$set": {
                             "MAX TEAMS": maxTeams - 1,
-                            "TOTAL BATCHES": vacancies - 1,
+                            # "TOTAL BATCHES": vacancies - 1,
+                            "TOTAL BATCHES": document["TOTAL BATCHES"] + 1,
                         }
                     },
                 )
@@ -2343,7 +2348,8 @@ def selectStudentDirectlyByStaff(mailid):
                     {
                         "$set": {
                             "MAX TEAMS": maxTeams - 1,
-                            "TOTAL BATCHES": vacancies - 1,
+                            # "TOTAL BATCHES": vacancies - 1,
+                            "TOTAL BATCHES": document["TOTAL BATCHES"] + 1,
                         }
                     },
                 )
@@ -2477,7 +2483,8 @@ def deleteTeam():
         faculty_list_collection.update_one(
             {"University EMAIL ID": guidemailid},
             {
-                "$inc": {"TOTAL BATCHES": 1, "MAX TEAMS": 1},
+                # "$inc": {"ALLOTED BATCHES": 1, "TOTAL BATCHES": -1, "MAX TEAMS": 1},
+                "$inc": {"TOTAL BATCHES": -1},
                 "$pull": {
                     "allTeams": str(teamId),
                     "allStudents": {"$in": studentmails},
@@ -2509,72 +2516,24 @@ def update_vacancies():
 
     faculty_list_collection = db["facultylist"]
 
-    # Find the faculty
     faculty_doc = faculty_list_collection.find_one(
         {"University EMAIL ID": faculty_email}
     )
     if not faculty_doc:
         return jsonify({"message": "Faculty not found."}), 404
 
-    current_vacancies = faculty_doc.get("TOTAL BATCHES", 0)
+    # current_vacancies = faculty_doc.get("TOTAL BATCHES", 0)
 
-    updated_vacancies = current_vacancies + new_vacancies
+    # updated_vacancies = current_vacancies + new_vacancies
+    updated_vacancies = new_vacancies
 
     # Update in DB
     faculty_list_collection.update_one(
         {"University EMAIL ID": faculty_email},
-        {"$set": {"TOTAL BATCHES": updated_vacancies}},
+        {"$set": {"ALLOTED BATCHES": updated_vacancies}},
     )
 
     return jsonify({"message": f"Vacancies updated to {updated_vacancies}."}), 200
-
-
-# @app.route("/admin/get_faculty_details", methods=["GET"])
-# def get_faculty_details():
-#     collection = db.facultylist
-#     try:
-#         page = int(request.args.get("page", 1))
-#         limit = int(request.args.get("limit", 10))
-#         search = request.args.get("search", "").strip()
-#         skip = (page - 1) * limit
-
-#         query = {}
-#         if search:
-#             query["NAME OF THE FACULTY"] = {"$regex": search, "$options": "i"}
-
-#         total_count = collection.count_documents(query)
-#         data = collection.find(query).skip(skip).limit(limit)
-
-#         result = []
-#         for i, document in enumerate(data, start=skip + 1):
-#             result.append(
-#                 {
-#                     "id": i,
-#                     "NAME": document["NAME OF THE FACULTY"],
-#                     "VACANCIES": document["TOTAL BATCHES"],
-#                     "MaxTeams": document["MAX TEAMS"],
-#                     "DESIGNATION": document["DESIGNATION"],
-#                     "DOMAIN1": document["DOMAIN 1"],
-#                     "DOMAIN2": document["DOMAIN 2"],
-#                     "DOMAIN3": document["DOMAIN 3"],
-#                     "UniversityEMAILID": document["University EMAIL ID"],
-#                     "IMAGE": document["IMAGE"],
-#                     "EMPID": document["EMP ID"],
-#                 }
-#             )
-
-#         return jsonify(
-#             {
-#                 "total": total_count,
-#                 "page": page,
-#                 "limit": limit,
-#                 "totalPages": (total_count + limit - 1) // limit,
-#                 "guides": result,
-#             }
-#         )
-
-#     except Exception as e:
-#         return jsonify({"error": str(e)}), 500
 
 
 @app.route("/admin/get_faculty_details", methods=["GET"])
@@ -2584,11 +2543,23 @@ def get_faculty_details():
         page = int(request.args.get("page", 1))
         limit = int(request.args.get("limit", 10))
         search = request.args.get("search", "").strip()
+        min_vacancies = request.args.get("minVacancies", "").strip()
         skip = (page - 1) * limit
 
         query = {}
+
+        # Add search filter for faculty name
         if search:
             query["NAME OF THE FACULTY"] = {"$regex": search, "$options": "i"}
+
+        # Add vacancy filter using MongoDB $expr
+        if min_vacancies and min_vacancies.isdigit():
+            query["$expr"] = {
+                "$gte": [
+                    {"$subtract": ["$ALLOTED BATCHES", "$TOTAL BATCHES"]},
+                    int(min_vacancies),
+                ]
+            }
 
         total_count = collection.count_documents(query)
         data = collection.find(query).skip(skip).limit(limit)
@@ -2599,8 +2570,9 @@ def get_faculty_details():
                 {
                     "id": i,
                     "NAME": doc.get("NAME OF THE FACULTY", ""),
-                    "VACANCIES": doc.get("TOTAL BATCHES", 0),
-                    "MaxTeams": doc.get("MAX TEAMS", 0),
+                    "VACANCIES": doc.get("ALLOTED BATCHES", 0)
+                    - doc.get("TOTAL BATCHES", 0),
+                    "AllotedBatches": doc.get("ALLOTED BATCHES", 0),
                     "DESIGNATION": doc.get("DESIGNATION", ""),
                     "DOMAIN1": doc.get("DOMAIN 1", ""),
                     "DOMAIN2": doc.get("DOMAIN 2", ""),
@@ -2641,7 +2613,7 @@ def add_faculty():
             "email",
             "empId",
             "designation",
-            "totalBatches",
+            "allotedBatches",
             "maxTeams",
             "password",
         ]
@@ -2689,7 +2661,8 @@ def add_faculty():
         faculty_document = {
             "SL": {"NO": next_sl_no},
             "NAME OF THE FACULTY": data["name"],
-            "TOTAL BATCHES": int(data["totalBatches"]),
+            "TOTAL BATCHES": 0,
+            "ALLOTED BATCHES": int(data["allotedBatches"]),
             "MAX TEAMS": int(data["maxTeams"]),
             "EMP ID": int(data["empId"]),
             "NAME_Capital letters as per Guide List": data["name"].upper(),
@@ -2733,6 +2706,15 @@ def add_faculty():
         return jsonify({"message": f"Invalid data format: {str(ve)}"}), 400
     except Exception as e:
         return jsonify({"message": f"Error adding faculty: {str(e)}"}), 500
+
+
+@app.route("/enhance/check_team_id", methods=["GET"])
+def check_team_exist():
+    data = request.json
+    regNo = data["regNo"]
+    p2regNo = data["p2regNo"]
+
+    return jsonify({"message": "check check"})
 
 
 if __name__ == "__main__":

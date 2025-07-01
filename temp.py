@@ -1,68 +1,321 @@
-# from pymongo import MongoClient
-# import os
-
-# client = MongoClient(str(os.getenv("MONGO_URI")))
-# db = client.cse_gsp_22_26
-# col = db.facultycredentials
-
-# seen = set()
-# for doc in col.find():
-#     mail = doc["mailId"]
-#     if mail in seen:
-#         col.delete_one({"_id": doc["_id"]})
-#     else:
-#         seen.add(mail)
-
-
-import pandas as pd
 from pymongo import MongoClient
 import os
+from collections import defaultdict
+from collections import Counter
 
-# Connect to MongoDB
 client = MongoClient(os.getenv("MONGO_URI"))
-db = client.cse_gsp_22_26
-col = db.facultylist
+# db = client.cse_gsp_22_26
+db = client.backup_cse_gsp_22_26
 
-# Load the CSV (no headers, so we define them manually)
-df = pd.read_csv(
-    "../GSP Upgraded Data/2022-2026 STUDENTS PROJECT GUIDE LIST.csv",
-    header=None,
-    encoding="latin1",
-    engine="python",
-)
-df.columns = ["S.NO", "NAME", "BATCHES"]
 
-# Get all emails from DB for manual checking
-emails = list(col.find({}, {"University EMAIL ID": 1, "_id": 0}))
-email_list = [e.get("University EMAIL ID", "N/A") for e in emails]
+def backup_db():
+    print("Starting backup...")
 
-unmatched = []
+    os.makedirs("backup_cse_gsp_22_26", exist_ok=True)
+    print("Backup folder created.")
 
-# Loop and update
-for idx, row in df.iterrows():
-    name = str(row["NAME"]).strip()
-    try:
-        count = int(row["BATCHES"])
-    except ValueError:
-        print(f"[{idx + 1}] ⚠️ Invalid batch number for: '{name}'")
-        continue
+    for name in db.list_collection_names():
+        print(f"Backing up collection: {name}")
+        data = list(db[name].find())
+        for doc in data:
+            doc["_id"] = str(doc["_id"])
+        with open(f"backup_cse_gsp_22_26/{name}.json", "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+        print(f"{name}.json created with {len(data)} documents.")
 
-    res = col.update_one(
-        {"NAME OF THE FACULTY": name}, {"$set": {"TOTAL BATCHES": count}}
+    print("✅ Backup complete!")
+
+
+# backup_db()
+
+src = client.cse_gsp_22_26
+dst = client.backup_cse_gsp_22_26
+
+
+def clone_db():
+    for name in src.list_collection_names():
+        data = list(src[name].find())
+        if data:
+            dst[name].insert_many(data)
+
+
+# clone_db()
+
+
+# Fix regNo from string to int
+def fix_regno_type():
+    for doc in db.registeredStudentsData.find():
+        reg = doc.get("regNo")
+        if isinstance(reg, str):
+            db.registeredStudentsData.update_one(
+                {"_id": doc["_id"]}, {"$set": {"regNo": int(reg)}}
+            )
+            print(f"✅ Updated regNo: {reg} → {int(reg)}")
+
+
+# fix_regno_type()
+
+
+# Fix p2regNo from string to int
+def fix_p2regno_type():
+    for doc in db.registeredStudentsData.find():
+        p2reg = doc.get("p2regNo")
+        if isinstance(p2reg, str):
+            db.registeredStudentsData.update_one(
+                {"_id": doc["_id"]}, {"$set": {"p2regNo": int(p2reg)}}
+            )
+            print(f"✅ Updated p2regNo: {p2reg} → {int(p2reg)}")
+
+
+# fix_p2regno_type()
+
+
+def copy_registered_users(dst, src):
+    data = list(dst.registeredUsers.find())
+    if data:
+        src.registeredUsers.insert_many(data)
+        print(f"✅ Inserted {len(data)} documents from backup into live DB.")
+    else:
+        print("⚠️ No documents found in backup.")
+
+
+# copy_registered_users(dst, src)
+
+
+def replace_dst_registered_students_data(dst, src):
+    # Step 1: Delete existing backup
+    deleted = dst.registeredStudentsData.delete_many({})
+    print(
+        f"🗑️ Deleted {deleted.deleted_count} documents from dst.registeredStudentsData."
     )
 
-    if res.matched_count == 0:
-        print(f"[{idx + 1}] ❌ No match for: '{name}'")
-        unmatched.append(name)
+    # Step 2: Copy from src to dst
+    data = list(src.registeredStudentsData.find())
+    if data:
+        dst.registeredStudentsData.insert_many(data)
+        print(
+            f"✅ Inserted {len(data)} documents from src into dst.registeredStudentsData."
+        )
     else:
-        print(f"[{idx + 1}] ✅ Updated: '{name}' → TOTAL BATCHES = {count}")
+        print("⚠️ No documents found in src.registeredStudentsData.")
 
-# Print unmatched and all emails for manual help
-if unmatched:
-    print("\n--- Unmatched Faculty Names ---")
-    for name in unmatched:
-        print(f"- {name}")
 
-    print("\n--- Faculty Emails in MongoDB ---")
-    for mail in email_list:
-        print(f"• {mail}")
+# replace_dst_registered_students_data(dst, src)
+
+
+def preview_null_password_docs():
+    docs = list(db.registeredStudentsData.find({"password": None}))
+    print(f"⚠️ Found {len(docs)} documents with password: null\n")
+    cnt = 0
+    for d in docs:
+        cnt += 1
+        print(f"🆔 {d['_id']} | teamId: {d.get('teamId')} | regNo: {d.get('regNo')}")
+    print(f"{cnt=}")
+
+
+# preview_null_password_docs()
+
+
+def find_duplicate_team_ids():
+    pipeline = [
+        {"$group": {"_id": "$teamId", "count": {"$sum": 1}}},
+        {"$match": {"count": {"$gt": 1}}},
+        {"$sort": {"count": -1}},
+    ]
+
+    duplicates = list(db.registeredStudentsData.aggregate(pipeline))
+
+    if not duplicates:
+        print("✅ No duplicate teamIds found.")
+        return
+
+    print(f"⚠️ Found {len(duplicates)} duplicate teamIds:\n")
+
+    for dup in duplicates:
+        team_id = dup["_id"]
+        count = dup["count"]
+        print(f"🧩 teamId: {team_id} | Count: {count}")
+
+
+# find_duplicate_team_ids()
+
+
+def delete_duplicate_team_ids_keep_oldest_with_password():
+    print("🔍 Scanning for duplicate teamIds...\n")
+
+    team_groups = defaultdict(list)
+
+    # Group documents by teamId
+    for doc in db.registeredStudentsData.find():
+        team_id = doc.get("teamId")
+        if team_id:
+            team_groups[team_id].append(doc)
+
+    delete_ids = []
+
+    for team_id, docs in team_groups.items():
+        if len(docs) <= 1:
+            continue
+
+        # Separate by password existence
+        non_null_pw = [d for d in docs if d.get("password") is not None]
+        to_sort = non_null_pw if non_null_pw else docs
+
+        # Keep the oldest (smallest ObjectId)
+        to_keep = sorted(to_sort, key=lambda d: d["_id"])[0]["_id"]
+
+        for d in docs:
+            if d["_id"] != to_keep:
+                delete_ids.append(d["_id"])
+
+    print(f"🗑️ Deleting {len(delete_ids)} duplicate documents...\n")
+
+    result = db.registeredStudentsData.delete_many({"_id": {"$in": delete_ids}})
+    print(f"✅ Deleted {result.deleted_count} duplicates from registeredStudentsData.")
+
+
+# delete_duplicate_team_ids_keep_oldest_with_password()
+
+
+def find_and_delete_duplicate_team_ids():
+    pipeline = [
+        {"$group": {"_id": "$teamId", "count": {"$sum": 1}}},
+        {"$match": {"count": {"$gt": 1}}},
+        {"$sort": {"count": -1}},
+    ]
+
+    duplicates = list(db.registeredStudentsData.aggregate(pipeline))
+
+    if not duplicates:
+        print("✅ No duplicate teamIds found.")
+        return
+
+    print(f"⚠️ Found {len(duplicates)} duplicate teamIds.\n")
+
+    delete_ids = []
+
+    for entry in duplicates:
+        team_id = entry["_id"]
+        docs = list(db.registeredStudentsData.find({"teamId": team_id}))
+        sorted_docs = sorted(docs, key=lambda d: d["_id"])
+        keep_id = sorted_docs[0]["_id"]
+
+        print(f"\n🧩 teamId: {team_id} | Count: {entry['count']}")
+        print(f"✅ Keeping document _id: {keep_id} (teamId: {team_id})")
+
+        for doc in sorted_docs[1:]:
+            print(f"🗑️ Deleting document _id: {doc['_id']} (teamId: {team_id})")
+            delete_ids.append(doc["_id"])
+
+    result = db.registeredStudentsData.delete_many({"_id": {"$in": delete_ids}})
+    print(
+        f"\n🧹 Deleted {result.deleted_count} duplicate documents from registeredStudentsData."
+    )
+
+
+# find_and_delete_duplicate_team_ids()
+
+
+def clean_team_and_student_duplicates_in_faculty_list():
+    for doc in db.facultylist.find():
+        doc_id = doc["_id"]
+        email = doc.get("University EMAIL ID")
+        teams = doc.get("allTeams", [])
+        students = doc.get("allStudents", [])
+        total_batches = doc.get("TOTAL BATCHES", 0)
+
+        team_counts = Counter(teams)
+        student_counts = Counter(students)
+
+        # Count how many duplicate team IDs (each extra counts)
+        team_dup_count = sum(count - 1 for count in team_counts.values() if count > 1)
+        print(f"\n📘 Faculty: {email}")
+        print(f"🧩 Duplicate teamIds removed: {team_dup_count}")
+
+        # Remove duplicate teams (keep first occurrence)
+        seen_teams = set()
+        teams_clean = []
+        for t in teams:
+            if t not in seen_teams:
+                teams_clean.append(t)
+                seen_teams.add(t)
+
+        # Remove duplicate students (keep first occurrence)
+        seen_students = set()
+        students_clean = []
+        for s in students:
+            if s not in seen_students:
+                students_clean.append(s)
+                seen_students.add(s)
+
+        # Update in DB
+        db.facultylist.update_one(
+            {"_id": doc_id},
+            {
+                "$set": {"allTeams": teams_clean, "allStudents": students_clean},
+                "$inc": {"TOTAL BATCHES": team_dup_count},
+            },
+        )
+
+        print(f"✅ Cleaned. TOTAL BATCHES incremented by {team_dup_count}.")
+
+
+# clean_team_and_student_duplicates_in_faculty_list()
+
+
+def delete_users_without_team_id():
+    to_delete = list(
+        db.registeredUsers.find(
+            {"$or": [{"teamId": {"$exists": False}}, {"teamId": None}, {"teamId": ""}]}
+        )
+    )
+
+    if not to_delete:
+        print("✅ No users found without teamId.")
+        return
+
+    for doc in to_delete:
+        print(f"🗑️ Deleting: {doc.get('email', '[no email]')}")
+
+    ids = [doc["_id"] for doc in to_delete]
+    result = db.registeredUsers.delete_many({"_id": {"$in": ids}})
+    print(f"\n✅ Deleted {result.deleted_count} documents from registeredUsers.")
+
+
+# delete_users_without_team_id()
+
+
+def add_alloted_batches_field():
+    count = 0
+    for doc in db.facultylist.find():
+        total = doc.get("TOTAL BATCHES", 0)
+        db.facultylist.update_one(
+            {"_id": doc["_id"]}, {"$set": {"ALLOTED BATCHES": total}}
+        )
+        print(
+            f"✅ Added 'ALLOTED BATCHES': {total} for {doc.get('University EMAIL ID')}"
+        )
+        count += 1
+
+    print(f"\n🧾 Total documents updated: {count}")
+
+
+# add_alloted_batches_field()
+
+
+def update_total_batches_from_allTeams():
+    faculty_collection = db["facultylist"]
+    for doc in faculty_collection.find():
+        all_teams = doc.get("allTeams", [])
+        total_batches = len(all_teams)
+
+        faculty_collection.update_one(
+            {"_id": doc["_id"]}, {"$set": {"TOTAL BATCHES": total_batches}}
+        )
+
+        print(
+            f"✅ Updated TOTAL BATCHES to {total_batches} for: {doc.get('University EMAIL ID', 'N/A')}"
+        )
+
+
+update_total_batches_from_allTeams()
