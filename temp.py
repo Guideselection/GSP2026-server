@@ -2,6 +2,8 @@ from pymongo import MongoClient
 import os
 from collections import defaultdict
 from collections import Counter
+from collections import defaultdict
+from collections import Counter
 
 client = MongoClient(os.getenv("MONGO_URI"))
 # db = client.cse_gsp_22_26
